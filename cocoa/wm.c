@@ -4,8 +4,10 @@
 #include <stdlib.h>
 
 void draw_root_window(Display *dpy, Window root, GC gc, int screen_width, int screen_height) {
+    // Set the root window background to light grey
     XSetForeground(dpy, gc, WhitePixel(dpy, 0));
     XFillRectangle(dpy, root, gc, 0, 0, screen_width, screen_height);
+    XFlush(dpy); // Ensure the drawing is flushed to the server
 }
 
 void enforce_window_size(Display *dpy, Window win) {
@@ -39,7 +41,10 @@ void manage_existing_windows(Display *dpy, Window root) {
 
 int main() {
     Display *dpy = XOpenDisplay(NULL);
-    if (!dpy) return 1;
+    if (!dpy) {
+        fprintf(stderr, "error: Cannot open display\n");
+        return 1;
+    }
 
     Window root = DefaultRootWindow(dpy);
     Screen *screen = DefaultScreenOfDisplay(dpy);
@@ -47,10 +52,15 @@ int main() {
     int screen_height = screen->height;
     
     GC gc = XCreateGC(dpy, root, 0, NULL);
+
+    // Redirect window management events
     XSelectInput(dpy, root, SubstructureRedirectMask | SubstructureNotifyMask | FocusChangeMask);
-    
-    manage_existing_windows(dpy, root);
+
+    // Draw the root window background
     draw_root_window(dpy, root, gc, screen_width, screen_height);
+
+    // Manage existing windows
+    manage_existing_windows(dpy, root);
     XSync(dpy, False);
 
     printf("COCOA DREAMY1 Good Morning\n");
