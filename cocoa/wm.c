@@ -8,6 +8,15 @@ void draw_root_window(Display *dpy, Window root, GC gc, int screen_width, int sc
     XFillRectangle(dpy, root, gc, 0, 0, screen_width, screen_height);
 }
 
+void enforce_window_size(Display *dpy, Window win) {
+    XWindowAttributes attrs;
+    if (XGetWindowAttributes(dpy, win, &attrs)) {
+        if (attrs.width <= 0 || attrs.height <= 0) {
+            XResizeWindow(dpy, win, 500, 500);
+        }
+    }
+}
+
 void manage_existing_windows(Display *dpy, Window root) {
     Window root_return, parent_return, *children;
     unsigned int nchildren;
@@ -20,8 +29,8 @@ void manage_existing_windows(Display *dpy, Window root) {
             if (XGetWindowAttributes(dpy, win, &attrs) && attrs.override_redirect)
                 continue;
 
-            // Map existing window without reconfiguring
             XMapWindow(dpy, win);
+            enforce_window_size(dpy, win);
             XRaiseWindow(dpy, win);
         }
         XFree(children);
@@ -40,7 +49,6 @@ int main() {
     GC gc = XCreateGC(dpy, root, 0, NULL);
     XSelectInput(dpy, root, SubstructureRedirectMask | SubstructureNotifyMask | FocusChangeMask);
     
-    // Manage existing windows without resizing them
     manage_existing_windows(dpy, root);
     draw_root_window(dpy, root, gc, screen_width, screen_height);
     XSync(dpy, False);
@@ -54,8 +62,8 @@ int main() {
         switch (ev.type) {
             case MapRequest: {
                 Window child = ev.xmaprequest.window;
-                // Map window without resizing
                 XMapWindow(dpy, child);
+                enforce_window_size(dpy, child);
                 XRaiseWindow(dpy, child);
                 break;
             }
@@ -64,13 +72,12 @@ int main() {
                 XWindowChanges wc = {
                     .x = cre->x,
                     .y = cre->y,
-                    .width = cre->width,
-                    .height = cre->height,
+                    .width = (cre->width > 0) ? cre->width : 500,
+                    .height = (cre->height > 0) ? cre->height : 500,
                     .border_width = cre->border_width,
                     .sibling = cre->above,
                     .stack_mode = cre->detail
                 };
-                // Honor client's requested configuration
                 XConfigureWindow(dpy, cre->window, cre->value_mask, &wc);
                 break;
             }
