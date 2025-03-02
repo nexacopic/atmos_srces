@@ -3,59 +3,88 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void draw_window(Display *dpy, Window win, GC gc, int screen_width, int screen_height) {
-    // Set the window background to a color (light grey in this case)
+void draw_root_window(Display *dpy, Window root, GC gc, int screen_width, int screen_height) {
     XSetForeground(dpy, gc, WhitePixel(dpy, 0));
-    XFillRectangle(dpy, win, gc, 0, 0, screen_width, screen_height);
+    XFillRectangle(dpy, root, gc, 0, 0, screen_width, screen_height);
+}
+
+void manage_existing_windows(Display *dpy, Window root) {
+    Window root_return, parent_return, *children;
+    unsigned int nchildren;
+    
+    if (XQueryTree(dpy, root, &root_return, &parent_return, &children, &nchildren)) {
+        for (unsigned int i = 0; i < nchildren; i++) {
+            Window win = children[i];
+            XWindowAttributes attrs;
+            
+            if (XGetWindowAttributes(dpy, win, &attrs) && attrs.override_redirect)
+                continue;
+
+            // Map existing window without reconfiguring
+            XMapWindow(dpy, win);
+            XRaiseWindow(dpy, win);
+        }
+        XFree(children);
+    }
 }
 
 int main() {
     Display *dpy = XOpenDisplay(NULL);
-    if (!dpy) {
-        printf("error: Cannot open display\n");
-        return 1;
-    }
+    if (!dpy) return 1;
 
     Window root = DefaultRootWindow(dpy);
     Screen *screen = DefaultScreenOfDisplay(dpy);
     int screen_width = screen->width;
     int screen_height = screen->height;
     
-    // Create a graphics context for drawing
     GC gc = XCreateGC(dpy, root, 0, NULL);
-
-    // Redirect window management to our program
     XSelectInput(dpy, root, SubstructureRedirectMask | SubstructureNotifyMask | FocusChangeMask);
+    
+    // Manage existing windows without resizing them
+    manage_existing_windows(dpy, root);
+    draw_root_window(dpy, root, gc, screen_width, screen_height);
     XSync(dpy, False);
 
     printf("COCOA DREAMY1 Good Morning\n");
 
-    // Event loop
     while (1) {
         XEvent ev;
         XNextEvent(dpy, &ev);
 
         switch (ev.type) {
             case MapRequest: {
-                XMapWindow(dpy, ev.xmaprequest.window);
+                Window child = ev.xmaprequest.window;
+                // Map window without resizing
+                XMapWindow(dpy, child);
+                XRaiseWindow(dpy, child);
                 break;
             }
-            case FocusIn: {
-                // Handle focus event, mark the focused window
-                Window focused_window = ev.xfocus.window;
-                printf("Window focused: %lu\n", focused_window);
+            case ConfigureRequest: {
+                XConfigureRequestEvent *cre = &ev.xconfigurerequest;
+                XWindowChanges wc = {
+                    .x = cre->x,
+                    .y = cre->y,
+                    .width = cre->width,
+                    .height = cre->height,
+                    .border_width = cre->border_width,
+                    .sibling = cre->above,
+                    .stack_mode = cre->detail
+                };
+                // Honor client's requested configuration
+                XConfigureWindow(dpy, cre->window, cre->value_mask, &wc);
                 break;
             }
             case Expose: {
-                // Draw the window when exposed
-                if (ev.xexpose.count == 0) {
-                    Window win = ev.xexpose.window;
-                    draw_window(dpy, win, gc, screen_width, screen_height);
+                if (ev.xexpose.window == root && ev.xexpose.count == 0) {
+                    draw_root_window(dpy, root, gc, screen_width, screen_height);
                 }
                 break;
             }
-            default:
+            case FocusIn: {
+                printf("Window focused: %lu\n", ev.xfocus.window);
                 break;
+            }
+            default: break;
         }
     }
 
